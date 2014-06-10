@@ -26,6 +26,14 @@ endif(${CMAKE_BUILD_TYPE} STREQUAL Debug)
 find_package ( USB1 REQUIRED )
 include_directories ( ${LIBUSB_INCLUDE_DIR} )
 
+set(CMAKE_REQUIRED_INCLUDES ${LIBUSB_INCLUDE_DIR})
+set(CMAKE_REQUIRED_LIBRARIES ${LIBUSB_LIBRARIES})
+include(CheckFunctionExists)
+check_function_exists(libusb_open_fd HAVE_LIBUSB_OPEN_FD)
+if ( DEFINED HAVE_LIBUSB_OPEN_FD)
+	add_definitions(-DHAVE_LIBUSB_OPEN_FD)
+endif ()
+
 # Find Boost (optional package)
 find_package(Boost)
 
