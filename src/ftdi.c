@@ -761,6 +761,146 @@ int ftdi_usb_open_desc_index(struct ftdi_context *ftdi, int vendor, int product,
 }
 
 /**
+    Opens the first device with a given vendor and product ids.
+
+    \param ftdi pointer to ftdi_context
+    \param vendor Vendor ID
+    \param product Product ID
+    \param fd USB file descriptor
+
+    \retval same as ftdi_usb_open_desc()
+*/
+int ftdi_usb_open_fd(struct ftdi_context *ftdi, int vendor, int product, int fd)
+{
+    return ftdi_usb_open_fd_desc(ftdi, vendor, product, NULL, NULL, fd);
+}
+
+/**
+    Opens the first device with a given, vendor id, product id,
+    description and serial.
+
+    \param ftdi pointer to ftdi_context
+    \param vendor Vendor ID
+    \param product Product ID
+    \param description Description to search for. Use NULL if not needed.
+    \param serial Serial to search for. Use NULL if not needed.
+    \param fd USB file descriptor
+
+    \retval  0: all fine
+    \retval -3: usb device not found
+    \retval -4: unable to open device
+    \retval -5: unable to claim device
+    \retval -6: reset failed
+    \retval -7: set baudrate failed
+    \retval -8: get product description failed
+    \retval -9: get serial number failed
+    \retval -12: libusb_get_device_list() failed
+    \retval -13: libusb_get_device_descriptor() failed
+*/
+int ftdi_usb_open_fd_desc(struct ftdi_context *ftdi, int vendor, int product,
+                       const char* description, const char* serial, int fd)
+{
+    return ftdi_usb_open_fd_desc_index(ftdi,vendor,product,description,serial,0, fd);
+}
+
+/**
+    Opens the index-th device with a given, vendor id, product id,
+    description and serial.
+
+    \param ftdi pointer to ftdi_context
+    \param vendor Vendor ID
+    \param product Product ID
+    \param description Description to search for. Use NULL if not needed.
+    \param serial Serial to search for. Use NULL if not needed.
+    \param index Number of matching device to open if there are more than one, starts with 0.
+    \param fd USB file descriptor
+
+    \retval  0: all fine
+    \retval -1: usb_find_busses() failed
+    \retval -2: usb_find_devices() failed
+    \retval -3: usb device not found
+    \retval -4: unable to open device
+    \retval -5: unable to claim device
+    \retval -6: reset failed
+    \retval -7: set baudrate failed
+    \retval -8: get product description failed
+    \retval -9: get serial number failed
+    \retval -10: unable to close device
+    \retval -11: ftdi context invalid
+*/
+int ftdi_usb_open_fd_desc_index(struct ftdi_context *ftdi, int vendor, int product,
+                             const char* description, const char* serial, unsigned int index, int fd)
+{
+    libusb_device *dev;
+    libusb_device **devs;
+    char string[256];
+    int i = 0;
+
+    if (ftdi == NULL)
+        ftdi_error_return(-11, "ftdi context invalid");
+
+    if (libusb_get_device_list(ftdi->usb_ctx, &devs) < 0)
+        ftdi_error_return(-12, "libusb_get_device_list() failed");
+
+    while ((dev = devs[i++]) != NULL)
+    {
+        struct libusb_device_descriptor desc;
+        int res;
+
+        if (libusb_get_device_descriptor(dev, &desc) < 0)
+            ftdi_error_return_free_device_list(-13, "libusb_get_device_descriptor() failed", devs);
+
+        if (desc.idVendor == vendor && desc.idProduct == product)
+        {
+            if (libusb_open_fd(dev, &ftdi->usb_dev, fd) < 0)
+                ftdi_error_return_free_device_list(-4, "usb_open() failed", devs);
+
+            if (description != NULL)
+            {
+                if (libusb_get_string_descriptor_ascii(ftdi->usb_dev, desc.iProduct, (unsigned char *)string, sizeof(string)) < 0)
+                {
+                    ftdi_usb_close_internal (ftdi);
+                    ftdi_error_return_free_device_list(-8, "unable to fetch product description", devs);
+                }
+                if (strncmp(string, description, sizeof(string)) != 0)
+                {
+                    ftdi_usb_close_internal (ftdi);
+                    continue;
+                }
+            }
+            if (serial != NULL)
+            {
+                if (libusb_get_string_descriptor_ascii(ftdi->usb_dev, desc.iSerialNumber, (unsigned char *)string, sizeof(string)) < 0)
+                {
+                    ftdi_usb_close_internal (ftdi);
+                    ftdi_error_return_free_device_list(-9, "unable to fetch serial number", devs);
+                }
+                if (strncmp(string, serial, sizeof(string)) != 0)
+                {
+                    ftdi_usb_close_internal (ftdi);
+                    continue;
+                }
+            }
+
+            ftdi_usb_close_internal (ftdi);
+
+            if (index > 0)
+            {
+                index--;
+                continue;
+            }
+
+            res = ftdi_usb_open_dev(ftdi, dev);
+            libusb_free_device_list(devs,1);
+            return res;
+        }
+    }
+
+    // device not found
+    ftdi_error_return_free_device_list(-3, "device not found", devs);
+}
+
+/**
     Opens the ftdi-device described by a description-string.
     Intended to be used for parsing a device-description given as commandline argument.
 
